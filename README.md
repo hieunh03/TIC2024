@@ -3,4 +3,4 @@
 2. Create env for isolate enviroment: `python -m venv .venv` or `python3 -m venv .venv`
 3. Activate env: `source .venv/bin/activate`
 4. Install requirements: `pip install -r requirements.txt`
-5. Run : `fastapit dev app.py`
+5. Run : `fastapi dev app.py`
