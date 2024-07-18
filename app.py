@@ -55,7 +55,7 @@ def IoU(box1, box2, box_format="xyxy"):
 
     return iou
 
-@app.post("/upload_video/")
+@app.post("/process_video/")
 async def upload_video(file: UploadFile = File(...), weight: str = 'yolov8s-worldv2.pt', output_folder: str = 'outputs'):
     video_path = f"uploaded_{file.filename}"
     
@@ -191,7 +191,7 @@ async def upload_video(file: UploadFile = File(...), weight: str = 'yolov8s-worl
         track_dict[key]['end_time'] = track_dict[key]['current_frame_id'] / fps
         track_dict[key]['name'] = classes_name[int(track_dict[key]['cls'])]
 
-    return JSONResponse({"detection_video": out_path + '.mp4', "blurred_video": out_path_blur + '.mp4', "object_list": track_dict})
+    return JSONResponse({"detection_video": out_path + '.mp4', "blurred_video": out_path_blur + '.mp4', "data": track_dict})
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
