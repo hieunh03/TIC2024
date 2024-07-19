@@ -203,7 +203,7 @@ def audio_to_text(audio_path):
     audio = whisper.load_audio(audio_path)
     model = whisper.load_model("base")
     result = whisper.transcribe(model, audio)
-    return result
+    return result 
 
 @app.get("/get_audio")
 async def get_audio():
