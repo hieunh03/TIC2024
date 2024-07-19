@@ -9,6 +9,8 @@ import torch
 from ultralytics import YOLO
 import json
 from collections import defaultdict
+import moviepy.editor as mp
+import whisper_timestamped as whisper
 
 app = FastAPI()
 
@@ -192,6 +194,22 @@ async def upload_video(file: UploadFile = File(...), weight: str = 'yolov8s-worl
         track_dict[key]['name'] = classes_name[int(track_dict[key]['cls'])]
 
     return JSONResponse({"detection_video": out_path + '.mp4', "blurred_video": out_path_blur + '.mp4', "data": track_dict})
+
+def video_to_audio(video_path, audio_path):
+    video = mp.VideoFileClip(video_path)
+    video.audio.write_audiofile(audio_path)
+
+def audio_to_text(audio_path):
+    audio = whisper.load_audio(audio_path)
+    model = whisper.load_model("base")
+    result = whisper.transcribe(model, audio)
+    return result
+
+@app.get("/get_audio")
+async def get_audio():
+    video_to_audio('video.mp4', 'audio/audio.mp3')
+    stt_result = audio_to_text('audio/audio.mp3')
+    return stt_result
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
