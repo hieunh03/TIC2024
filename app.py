@@ -11,6 +11,7 @@ import json
 from collections import defaultdict
 import moviepy.editor as mp
 import whisper_timestamped as whisper
+import shutil
 
 app = FastAPI()
 
@@ -205,11 +206,26 @@ def audio_to_text(audio_path):
     result = whisper.transcribe(model, audio)
     return result 
 
-@app.get("/get_audio")
-async def get_audio():
-    video_to_audio('video.mp4', 'audio/audio.mp3')
-    stt_result = audio_to_text('audio/audio.mp3')
-    return stt_result
+@app.post("/get_audio")
+async def get_audio(file: UploadFile = File(...)):
+    video_path = f"temp/{file.filename}"
+    audio_path = "audio/audio.mp3"
+    
+    # Save uploaded video file
+    with open(video_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    
+    # Convert video to audio
+    video_to_audio(video_path, audio_path)
+    
+    # Transcribe audio to text
+    stt_result = audio_to_text(audio_path)
+    
+    # Cleanup temporary files
+    os.remove(video_path)
+    os.remove(audio_path)
+    
+    return JSONResponse(content=stt_result)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
