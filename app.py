@@ -1,4 +1,5 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Header, HTTPException, Request
+from fastapi.params import Path
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
@@ -12,6 +13,7 @@ from collections import defaultdict
 import moviepy.editor as mp
 import whisper_timestamped as whisper
 import shutil
+import requests
 
 app = FastAPI()
 
@@ -226,6 +228,63 @@ async def get_audio(file: UploadFile = File(...)):
     os.remove(audio_path)
     
     return JSONResponse(content=stt_result)
+
+UPLOAD_API_URL = "https://files.dev.tekoapis.net/upload/video/"  # Replace with the actual target API URL
+DOWNLOAD_API_URL = "https://files.dev.tekoapis.net/files/{uuid}"  # Replace with the actual target API URL
+
+@app.post("/upload-video")
+async def upload_video(
+    request: Request,
+    file: UploadFile = File(...),
+):
+    print('test')
+    print(request)
+    # token = authorization.split(" ")[1]
+    token = "eyJhbGciOiJSUzI1NiIsImtpZCI6ImQ0NjhhMWMyYWYzNTRjOGM4NDc0OTgwYjM5ZDdhNTZhIiwidHlwIjoiSldUIn0.eyJqdGkiOiJPUmVLeVFFbk96YW5SUURpY2kyRmRuaUR5eXAiLCJpc3MiOiJodHRwczovL29hdXRoLmRldmVsb3AudGVrb2FwaXMubmV0Iiwic3ViIjoiOWYzMTg0NTNkM2U3NDkzMGFiMWVlMjdmMzJkZWIyYTQiLCJhdWQiOiJkYTkwMjllNDU5Y2I0YzZhYmUzNTExZDIyZTJhM2Y5NCIsImlhdCI6MTcyMTM4MzM2NCwiZXhwIjoxNzIxMzg2OTY0LCJzY29wZSI6Im9wZW5pZCBwcm9maWxlIHJlYWQ6cGVybWlzc2lvbnMgaWFtX2FkbWluIGNsaWVudDptYW5hZ2VtZW50IHRlbmFudDptYW5hZ2VtZW50IiwidGVuYW50X2lkIjoiMSJ9.hbJv1zCmwdzyHzeJEqgP1BySWLwKAlD0i8wvP4sSZxdgyveLgpqfP0LY_sDpU-uaRNuMBsZLShdRwojJDL4Lp08cMEISyAPqN_bpQYN7QtACsU96BBnUsbW3JHJ3abQil0rAVpCvlnyaVIe3BqzXkCtWAUlGBHkOKvbBscHHRdBZq52CSagHBTda8NJOAO8ho61cYNgRbYSuyTfT8y36rw_cxVtfqjOw4kg7ocwnb8hAFpPgrlhnYPOJs8tsY1THVjRRYKbESOeb1tnsu2FaoDYErfLWZQ0ObRDfqx0v5EP1Cwn4Z7qltNhLwBoS6f_aqPHNS1Hig_6HaIhPqrdbnYX7M1d52USyWyaZnTs7J0ws7TKvZjLoQS6dOrruQW3eBYBN2dPWQqJX_YszYKQoqZVpbqBZNgdB80cScE2_Ao8PAqhfxNFve4vuOcvYKQvlKb9tl1kR0b36XzpbHVS0Rm7gs4EkMs-BeYF_AvQvooZCw9sHWQkvyila1W4vBaBPPhtNCtkHnVOIu1gS1-cV1W8IKCZxJ-OCaFNTFSoVPhUAaxmrv7nNTdbVmSE9veCbR0rMW-tHj4NkiWwKQtR3K7hRMX1xpxfObeULFJg5XfWYT1IpE0n0k5hV0ezext3FLd-hE6mlGhUEuV6Z3cRUzw8f3KqPkbSGnzYgoVrhBsU"
+
+    # Forward the file to the target API
+    with file.file as video_file:
+        headers = {
+            "Authorization": f"Bearer {token}"
+        }
+        response = requests.post(
+            UPLOAD_API_URL,
+            files={"file": (file.filename, video_file, file.content_type)}
+        )
+
+    if response.status_code == 200:
+        return {"message": "File successfully uploaded to the File Service API"}
+    else:
+        return {"message": "Failed to upload file to the File Service API", "status_code": response.status_code}
+
+@app.get("/fetch-file/{uuid}")
+async def fetch_file(
+        uuid: str = Path(..., description="The UUID for the file to fetch"),
+        accept: str = Header(default='application/binary'),
+        authorization: str = Header(None)
+):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header missing")
+
+    # Construct the URL to fetch the file
+    external_url = DOWNLOAD_API_URL.format(uuid=uuid)
+
+    # Make the GET request to the external API
+    response = requests.get(
+        external_url,
+        headers={
+            "Accept": accept,
+            "Authorization": authorization
+        }
+    )
+
+    if response.status_code == 200:
+        # Return the response content as is
+        return response.content
+    else:
+        raise HTTPException(status_code=response.status_code, detail="Failed to fetch the file from the external API")
+
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
