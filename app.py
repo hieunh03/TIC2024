@@ -219,27 +219,29 @@ def audio_to_text(audio_path):
     result = whisper.transcribe(model, audio)
     return result["segments"]
 
-# def create_beep_sound(duration_ms: int = 500) -> AudioSegment:
-#     # Create a beep sound
-#     beep = AudioSegment.sine(frequency=1000, duration=duration_ms)
-#     return beep
+def create_beep_sound() -> AudioSegment:
+    # Create a beep sound
+    beep = AudioSegment.from_file("beep.wav")
+    return beep
 
-# def insert_beeps(audio_path: str, segments: list, beep_duration: int = 500):
-#     beep = create_beep_sound(duration_ms=beep_duration)
-#     audio = AudioSegment.from_file(audio_path)
+def insert_beeps(audio_path: str, segments: list):
+    beep = create_beep_sound()
+    audio = AudioSegment.from_file(audio_path)
     
-#     for segment in segments:
-#         for word in segment["words"]:
-#             if word["filtered"]:
-#                 start_time = word["start"] * 1000  # pydub uses milliseconds
-#                 beep_start_time = start_time - beep_duration / 2  # Adjust beep position if needed
-#                 beep_end_time = beep_start_time + beep_duration
-                
-#                 # Insert beep sound
-#                 if beep_start_time > 0:  # Ensure beep_start_time is valid
-#                     audio = audio[:int(beep_start_time)] + beep + audio[int(beep_end_time):]
+    for segment in segments:
+        for word in segment["words"]:
+            if word["filtered"]:
+                beep_start_time = word["start"] * 1000  # pydub uses milliseconds
+                beep_end_time = word["end"] * 1000
+                beep_duration = beep_end_time - beep_start_time
 
-#     audio.export(audio_path, format="mp3")
+                # Extend the beep duration to fit the word duration
+                adjusted_beep = beep[:beep_duration] if len(beep) > beep_duration else beep + AudioSegment.silent(duration=beep_duration - len(beep))
+                
+                # Insert beep sound
+                audio = audio[:int(beep_start_time)] + adjusted_beep + audio[int(beep_end_time):]
+
+    audio.export(audio_path, format="mp3")
 
 @app.post("/get_audio")
 async def get_audio(file: UploadFile = File(...)):
@@ -260,13 +262,13 @@ async def get_audio(file: UploadFile = File(...)):
     segments = audio_to_text(audio_path)
     
     os.remove(video_path)
-    os.remove(audio_path)
+    # os.remove(audio_path)
     
     for segment in segments:
         for word in segment["words"]:
             word["filtered"] = check_word(word["text"])
     
-    # insert_beeps(audio_path, segments)
+    insert_beeps(audio_path, segments)
     return JSONResponse(segments)
 
 
