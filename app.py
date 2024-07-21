@@ -1,19 +1,23 @@
+from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile, File, Header, HTTPException, Request
 from fastapi.params import Path
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import os
 import cv2
-import numpy as np
-import torch
 from ultralytics import YOLO
-import json
-from collections import defaultdict
 import moviepy.editor as mp
 import whisper_timestamped as whisper
 import shutil
 import requests
+from transformers import pipeline
+from pydub import AudioSegment
+
+
+classifier = pipeline('zero-shot-classification', model='facebook/bart-large-mnli')
+categories = ["Profanity", "Offensive Language", "Inappropriate Content", "Harmful Content", "Leak Info"]
+
 
 app = FastAPI()
 
@@ -198,6 +202,13 @@ async def upload_video(file: UploadFile = File(...), weight: str = 'yolov8s-worl
 
     return JSONResponse({"detection_video": out_path + '.mp4', "blurred_video": out_path_blur + '.mp4', "data": track_dict})
 
+def check_word(text):
+    results = classifier(text, candidate_labels=categories)
+    labels = results['labels']
+    scores = results['scores']
+    filtered_labels = [label for label, score in zip(labels, scores) if score > 0.6]
+    return filtered_labels
+
 def video_to_audio(video_path, audio_path):
     video = mp.VideoFileClip(video_path)
     video.audio.write_audiofile(audio_path)
@@ -206,10 +217,35 @@ def audio_to_text(audio_path):
     audio = whisper.load_audio(audio_path)
     model = whisper.load_model("base")
     result = whisper.transcribe(model, audio)
-    return result 
+    return result["segments"]
+
+# def create_beep_sound(duration_ms: int = 500) -> AudioSegment:
+#     # Create a beep sound
+#     beep = AudioSegment.sine(frequency=1000, duration=duration_ms)
+#     return beep
+
+# def insert_beeps(audio_path: str, segments: list, beep_duration: int = 500):
+#     beep = create_beep_sound(duration_ms=beep_duration)
+#     audio = AudioSegment.from_file(audio_path)
+    
+#     for segment in segments:
+#         for word in segment["words"]:
+#             if word["filtered"]:
+#                 start_time = word["start"] * 1000  # pydub uses milliseconds
+#                 beep_start_time = start_time - beep_duration / 2  # Adjust beep position if needed
+#                 beep_end_time = beep_start_time + beep_duration
+                
+#                 # Insert beep sound
+#                 if beep_start_time > 0:  # Ensure beep_start_time is valid
+#                     audio = audio[:int(beep_start_time)] + beep + audio[int(beep_end_time):]
+
+#     audio.export(audio_path, format="mp3")
 
 @app.post("/get_audio")
 async def get_audio(file: UploadFile = File(...)):
+    os.makedirs("audio", exist_ok=True)
+    os.makedirs("temp", exist_ok=True)
+
     video_path = f"temp/{file.filename}"
     audio_path = "audio/audio.mp3"
     
@@ -221,13 +257,18 @@ async def get_audio(file: UploadFile = File(...)):
     video_to_audio(video_path, audio_path)
     
     # Transcribe audio to text
-    stt_result = audio_to_text(audio_path)
+    segments = audio_to_text(audio_path)
     
-    # Cleanup temporary files
     os.remove(video_path)
     os.remove(audio_path)
     
-    return JSONResponse(content=stt_result)
+    for segment in segments:
+        for word in segment["words"]:
+            word["filtered"] = check_word(word["text"])
+    
+    # insert_beeps(audio_path, segments)
+    return JSONResponse(segments)
+
 
 UPLOAD_API_URL = "https://files.dev.tekoapis.net/upload/video/"  # Replace with the actual target API URL
 DOWNLOAD_API_URL = "https://files.dev.tekoapis.net/files/{uuid}"  # Replace with the actual target API URL
@@ -286,4 +327,4 @@ async def fetch_file(
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8001)
