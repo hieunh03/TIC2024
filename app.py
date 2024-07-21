@@ -13,6 +13,8 @@ import shutil
 import requests
 from transformers import pipeline
 from pydub import AudioSegment
+import httpx
+import re
 
 
 classifier = pipeline('zero-shot-classification', model='facebook/bart-large-mnli')
@@ -275,29 +277,76 @@ async def get_audio(file: UploadFile = File(...)):
 UPLOAD_API_URL = "https://files.dev.tekoapis.net/upload/video/"  # Replace with the actual target API URL
 DOWNLOAD_API_URL = "https://files.dev.tekoapis.net/files/{uuid}"  # Replace with the actual target API URL
 
-@app.post("/upload-video")
-async def upload_video(
-    request: Request,
-    file: UploadFile = File(...),
-):
-    token = request.headers["Authorization"]
-    print(token)
-    # token = "eyJhbGciOiJSUzI1NiIsImtpZCI6ImQ0NjhhMWMyYWYzNTRjOGM4NDc0OTgwYjM5ZDdhNTZhIiwidHlwIjoiSldUIn0.eyJqdGkiOiJPUmVLeVFFbk96YW5SUURpY2kyRmRuaUR5eXAiLCJpc3MiOiJodHRwczovL29hdXRoLmRldmVsb3AudGVrb2FwaXMubmV0Iiwic3ViIjoiOWYzMTg0NTNkM2U3NDkzMGFiMWVlMjdmMzJkZWIyYTQiLCJhdWQiOiJkYTkwMjllNDU5Y2I0YzZhYmUzNTExZDIyZTJhM2Y5NCIsImlhdCI6MTcyMTM4MzM2NCwiZXhwIjoxNzIxMzg2OTY0LCJzY29wZSI6Im9wZW5pZCBwcm9maWxlIHJlYWQ6cGVybWlzc2lvbnMgaWFtX2FkbWluIGNsaWVudDptYW5hZ2VtZW50IHRlbmFudDptYW5hZ2VtZW50IiwidGVuYW50X2lkIjoiMSJ9.hbJv1zCmwdzyHzeJEqgP1BySWLwKAlD0i8wvP4sSZxdgyveLgpqfP0LY_sDpU-uaRNuMBsZLShdRwojJDL4Lp08cMEISyAPqN_bpQYN7QtACsU96BBnUsbW3JHJ3abQil0rAVpCvlnyaVIe3BqzXkCtWAUlGBHkOKvbBscHHRdBZq52CSagHBTda8NJOAO8ho61cYNgRbYSuyTfT8y36rw_cxVtfqjOw4kg7ocwnb8hAFpPgrlhnYPOJs8tsY1THVjRRYKbESOeb1tnsu2FaoDYErfLWZQ0ObRDfqx0v5EP1Cwn4Z7qltNhLwBoS6f_aqPHNS1Hig_6HaIhPqrdbnYX7M1d52USyWyaZnTs7J0ws7TKvZjLoQS6dOrruQW3eBYBN2dPWQqJX_YszYKQoqZVpbqBZNgdB80cScE2_Ao8PAqhfxNFve4vuOcvYKQvlKb9tl1kR0b36XzpbHVS0Rm7gs4EkMs-BeYF_AvQvooZCw9sHWQkvyila1W4vBaBPPhtNCtkHnVOIu1gS1-cV1W8IKCZxJ-OCaFNTFSoVPhUAaxmrv7nNTdbVmSE9veCbR0rMW-tHj4NkiWwKQtR3K7hRMX1xpxfObeULFJg5XfWYT1IpE0n0k5hV0ezext3FLd-hE6mlGhUEuV6Z3cRUzw8f3KqPkbSGnzYgoVrhBsU"
+@app.post("/get_oauth_token/")
+async def get_oauth_token():
+    url = 'https://oauth.dev.tekoapis.net/oauth/token'
+    headers = {
+        'Content-Type': 'application/x-www-form-urlencoded'
+    }
+    data = {
+        'grant_type': 'password',
+        'scope': 'openid profile us voucher-hub read:permissions tenant:management',
+        'client_id': '5da48d702722494b9ff1a792137eb8a6',
+        'username': '0949590040',
+        'password': '12345678'
+    }
 
-    # Forward the file to the target API
-    with file.file as video_file:
-        headers = {
-            "Authorization": f"Bearer {token}"
-        }
-        response = requests.post(
-            UPLOAD_API_URL,
-            files={"file": (file.filename, video_file, file.content_type)}
-        )
+    async with httpx.AsyncClient() as client:
+        response = await client.post(url, headers=headers, data=data)
+        if response.status_code == 200:
+            response_data = response.json()
+            return JSONResponse(content=response_data)
+        else:
+            raise HTTPException(status_code=response.status_code, detail=response.text)
 
-    if response.status_code == 200:
-        return {"message": "File successfully uploaded to the File Service API"}
-    else:
-        return {"message": "Failed to upload file to the File Service API", "status_code": response.status_code}
+@app.get("/get_access_token/")
+async def get_access_token():
+    url = 'http://localhost:8000/get_oauth_token/'
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(url)
+        if response.status_code == 200:
+            response_data = response.json()
+            access_token = response_data.get("access_token")
+            print(access_token)
+            if access_token:
+                return access_token
+            else:
+                raise HTTPException(status_code=500, detail="Access token not found in the response")
+        else:
+            raise HTTPException(status_code=response.status_code, detail=response.text)
+
+@app.post("/upload_video/")
+async def upload_video(file: UploadFile = File(...)):
+    access_token = await get_access_token()
+    url = 'https://files.dev.tekoapis.net/upload/video'
+    headers = {
+        'Accept': 'application/json',
+        'Authorization': f'Bearer {access_token}'
+    }
+
+    form_data = {
+        'file': (file.filename, await file.read(), file.content_type),
+        'cloud': (None, 'false')
+    }
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(url, headers=headers, files=form_data)
+        if response.status_code == 200:
+            response_data = response.json()
+            video_url = response_data.get("url")
+            if video_url:
+                # Extract UUID from the video URL using regex
+                match = re.search(r'/([0-9a-fA-F-]{36})/', video_url)
+                if match:
+                    uuid = match.group(1)
+                    return JSONResponse(content={"uuid": uuid, "url": video_url})
+                else:
+                    raise HTTPException(status_code=500, detail="UUID not found in the video URL")
+            else:
+                raise HTTPException(status_code=500, detail="URL not found in the response")
+        else:
+            raise HTTPException(status_code=response.status_code, detail=response.text)
 
 @app.get("/fetch-file/{uuid}")
 async def fetch_file(
@@ -325,6 +374,8 @@ async def fetch_file(
         return response.content
     else:
         raise HTTPException(status_code=response.status_code, detail="Failed to fetch the file from the external API")
+
+
 
 
 
