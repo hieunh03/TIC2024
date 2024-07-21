@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile, File, Header, HTTPException, Request
 from fastapi.params import Path
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import os
@@ -15,6 +15,7 @@ from transformers import pipeline
 from pydub import AudioSegment
 import httpx
 import re
+import aiofiles
 
 
 classifier = pipeline('zero-shot-classification', model='facebook/bart-large-mnli')
@@ -340,6 +341,8 @@ async def upload_video(file: UploadFile = File(...)):
                 match = re.search(r'/([0-9a-fA-F-]{36})/', video_url)
                 if match:
                     uuid = match.group(1)
+                    with open("uuid.txt", "w") as uuid_file:
+                        uuid_file.write(uuid)
                     return JSONResponse(content={"uuid": uuid, "url": video_url})
                 else:
                     raise HTTPException(status_code=500, detail="UUID not found in the video URL")
@@ -348,35 +351,34 @@ async def upload_video(file: UploadFile = File(...)):
         else:
             raise HTTPException(status_code=response.status_code, detail=response.text)
 
-@app.get("/fetch-file/{uuid}")
-async def fetch_file(
-        uuid: str = Path(..., description="The UUID for the file to fetch"),
-        accept: str = Header(default='application/binary'),
-        authorization: str = Header(None)
-):
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Authorization header missing")
+@app.get("/get_uuid/")
+async def get_uuid_from_file():
+    try:
+        with open("uuid.txt", "r") as uuid_file:
+            uuid = uuid_file.read().strip()
+            return {"uuid": uuid}
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="UUID file not found")
 
-    # Construct the URL to fetch the file
-    external_url = DOWNLOAD_API_URL.format(uuid=uuid)
+@app.get("/download_video/")
+async def download_video():
+    uuid_response = await get_uuid_from_file()
+    uuid = uuid_response["uuid"]
+    url = f'https://files.dev.tekoapis.net/files/{uuid}'
+    headers = {
+        'Accept': 'application/binary'
+    }
 
-    # Make the GET request to the external API
-    response = requests.get(
-        external_url,
-        headers={
-            "Accept": accept,
-            "Authorization": authorization
-        }
-    )
+    video_file_path = f"/tmp/{uuid}.mp4"
 
-    if response.status_code == 200:
-        # Return the response content as is
-        return response.content
-    else:
-        raise HTTPException(status_code=response.status_code, detail="Failed to fetch the file from the external API")
-
-
-
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url, headers=headers)
+        if response.status_code == 200:
+            async with aiofiles.open(video_file_path, 'wb') as video_file:
+                await video_file.write(response.content)
+            return FileResponse(video_file_path, media_type='video/mp4', filename=f"{uuid}.mp4")
+        else:
+            raise HTTPException(status_code=response.status_code, detail=response.text)
 
 
 if __name__ == "__main__":
