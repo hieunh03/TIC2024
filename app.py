@@ -275,9 +275,6 @@ async def get_audio(file: UploadFile = File(...)):
     return JSONResponse(segments)
 
 
-UPLOAD_API_URL = "https://files.dev.tekoapis.net/upload/video/"  # Replace with the actual target API URL
-DOWNLOAD_API_URL = "https://files.dev.tekoapis.net/files/{uuid}"  # Replace with the actual target API URL
-
 @app.post("/get_oauth_token/")
 async def get_oauth_token():
     url = 'https://oauth.dev.tekoapis.net/oauth/token'
@@ -287,9 +284,9 @@ async def get_oauth_token():
     data = {
         'grant_type': 'password',
         'scope': 'openid profile us voucher-hub read:permissions tenant:management',
-        'client_id': '5da48d702722494b9ff1a792137eb8a6',
-        'username': '0949590040',
-        'password': '12345678'
+        'client_id': '',
+        'username': '',
+        'password': ''
     }
 
     async with httpx.AsyncClient() as client:
